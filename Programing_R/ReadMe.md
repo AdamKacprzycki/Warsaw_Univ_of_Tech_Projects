@@ -1,1 +1,6 @@
-# Sample R code academic tasks :)
+# Academic tasks - sample R code  :)
+
+IDE <- RStudio <3
+
+used libaries <- dplyr
+                 tidyverse
