@@ -1,7 +1,5 @@
 # Data Maning Projects -> Market basket analysis - Associacion Rules and Clustering.
 
-I would like to present my final projects on Data Mining labs. 
-
 1. Market basket analysis - Assocication rules - I answer the question : Which products should be situated close to each other (on the retail space) and thus how to increase sale of it?
 
 2. Clustering Project - I answer th question: Is it possible to grouped pokemon by types (water, fire ect.) based only on basic stats (HP, Sepc. Attack ect)?
