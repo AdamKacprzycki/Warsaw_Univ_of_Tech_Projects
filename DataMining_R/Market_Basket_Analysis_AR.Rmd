@@ -1,0 +1,276 @@
+---
+title: "Reguły asocjacyjne - zadanie zaliczeniowe"
+author: Adam Kacprzycki - studia podyplomowe DS - PW Data mining - ed.11 (21L)- grupa
+  I
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+**CEL EKSPERYMENTU I ODPOWIEDZ NA PYTANIA:**
+
+1. Do czego potencjalnie w praktyce mogą być wykorzystane odkryte reguły:
+
+Odkryte reguły w kontekście analizowanych danych dot. zbioru "Groceries", potencjalnie mogą zostać zastosowane do:\
+- zwiększenie sprzedaży towarów poprzez zastosowanie odpowiedniej strategii rabatowej lub promocyjnej (np. do produktu X kup produkt Y za cenę ..., z rabatem itd.),\
+- ustalenie odpowiedniej polityki rabatowej, promocyjnej (może okazać się, że należy przydzielić rabat wyłącznie na jeden produkt, aby go sprzedać razem z innymi produktami),\
+- na podstawie danych historycznych zebranych per klient w ramach programu lojalnościowego (np. karta klienta w Żabce), można przesłać do klienta spersonalizowaną ofertę zakupową/rabatową lub reklamową i tym samym zachęcić klienta do kupna określonych produktów (np. kupiłeś produkt X to następnym razem kup może też Y ...)\
+- możliwość odpowiedniej aranżacji i organizacji powierzchni handlowej (całych alejek sklepowych wraz z półkami itd) w celu maksymalizacji sprzedaży,\
+- zestawianie produktów w zestawy, kup w zestawie produkt X i Y za cenę ...\
+
+2. Jaka reguła jest interesująca (definicja na bazie dostępnych parametrów reguł):
+
+Zakwalifikowałem jako ciekawe, następujące reguły:<br/>
+ - LHS(onions,butter) ->	RHS(whole milk)	support: 0.0030503	confidence: 0.75000	lift: 2.9352 certainty: 0.66420\
+ - LHS(tropical fruit,root vegetables,whipped/sour cream) -> RHS(other vegetables)	support: 0.0034	confidence: 0.73333 lift 3.7900	count("koszyki") 33	certainty: 0.66936\
+ - LHS(citrus fruit,tropical fruit,root vegetables,whole milk) ->	RHS(other vegetables)	support: 0.0032	confidence: 0.88571	lift: 4.5775, count("koszyki"): 31 certainty: 0.8583\
+UWAGA: *OPIS REGUŁ I DOKANANEGO WYBORU PONIŻEJ.\
+
+3. Jak wybrać najlepszą regułę.
+
+W mojej ocenie, odpowiedź może być skomplikowana i uwarunkowana jest indywidualnymi potrzebami klienta, biznesu lub danego projektu. Jeżeli mamy do czynienia z firmą z branży handlu detalicznego, jednym z celów w ramach poszukiwania reguł asoscjacyjnych może być maksymalizacja ogólnej sprzedaży. Tym samym wybór najlepszej reguły może opierać się o miary oceny jakości dla których znajdziemy najlepszą możliwą konfigurację maksymalnie wysokiego poziomu zaufania (powyżej 0.5 bliżej >=0.8) i wsparcia (kwestia indywidualna) dla których będziemy mieli współczynnik podniesienia >1, a współczynnik pewności będzie większy od 0 co świadczyć będzie o tym że elementy reguły są zależne pozytywnie.
+
+Zgodnie z powyższymi kryteriami, wybrałem następującą regułe jako najlepszą:
+ - LHS (citrus fruit,tropical fruit,root vegetables) =>	RHS (other vegetables)	support 0.0044738	 confidence 0.78571	lift	4.0607	 count("koszyki") 44	certainty 0.73430.<br/>
+ 
+UWAGA: *OPIS REGUŁY I DOKANANEGO WYBORU PONIŻEJ.
+
+-------------------------------------------
+
+**I. ANALIZA I WYSZUKANIE REGUŁ**
+
+Analizowany będzie zbiór danych z pakietu arules -> Groceries. 
+
+Zaimportowanie wykorzystywanych bibliotek, danych oraz zapoznanie się z specyfiką danych:
+```{r}
+library(arules)
+library(arulesViz)
+library(ggplot2)
+
+data('Groceries')
+
+?Groceries
+
+#Dane transakcyjne sklepu dyskontowego (profil: spożywczy, retail) z 30 dni. Ilość transakcji/koszyków 9835 (średnio 327 dziennie), dane produktowe zagregowane do 169 kategorii (np. saugage > meat and sausages itd).
+```
+
+**II. WSTĘPNA ANALIZA DANYCH**
+
+1. Szybki wgląd w analizowane dane przy pomocy funkcji summary():
+```{r}
+summary(Groceries)
+
+#itemInfo(Groceries) #informacje dotyczące hierarchi i przynależności produktów do danej kategorii
+#inspect(Groceries[1:1]) #wgląd w pierszą transakcję
+```
+Podsumowanie:
+
+W analizowanym zestawie danych mamy:
+- 9835 transakcji ("koszyków zakupowych") oraz 169 unikalnych produktów. 
+- najczęściej występującym produktem było pełne mleko (ang. whole milk). 
+- około 21% (ilościowo: 2159 szt.) stanowiły transakcje, w których zakupiony został tylko jeden produkt. 
+- najwięcej w produktów tj. 32 szt. zawierała tylko jedna transakcja. 
+- średnia wielkość koszyka to: 4.409 szt.
+
+2. Sprawdzam jakie produkty występują przynajmniej w 5% transakcji (support = 0.05) i tym samym, które produkty cieszą się największym zainteresowaniem (najszybciej rotują):
+
+Produktów ze wsparciem >= 5%:
+```{r}
+supportlvl = 0.05
+freqGros <- itemFrequency(Groceries)
+
+freqGros5 <- sort(freqGros[freqGros>=0.05], decreasing = T)
+length(freqGros5) #jest 28 produktów ze wsparciem 5%.
+
+head(freqGros5, n = 10) # wyświetlam pierwsze 10 wyników
+```
+Top 5 produkty to: 1. whole milk, 2. other vegetables, 3) rolls/buns, 4)soda, 5)yogurt.
+
+Wykres słupkowy - czestość względna produktów:
+```{r}
+itemFrequencyPlot(Groceries, 
+                  topN = length(freqGros5), 
+                  col=rgb(0,0.6,0,0.5),
+                  horiz = TRUE,
+                  xlab="Frequency (relative)", 
+                  main="Częstostość względna produktu (support = 0.05)")
+```
+
+Wykres słupkowy czestość bezwzględna - ilość wystąpień w szt. produktów w tramsakcjach:
+```{r}
+itemFrequencyPlot(Groceries, 
+                  topN = length(freqGros5), 
+                  type = "absolute",
+                  col=rgb(0,0.6,0,0.8),
+                  horiz = TRUE,
+                  xlab="Frequency (absolute)", 
+                  main="Częstostość bezwzględna produktu (support = 0.05)")
+```
+
+**III. WYBÓR POZIOMU WSPARCIA ORAZ ZAUFANIA DLA ALGORYTMU APRIORI:**
+
+Pierwszym krokiem, w zakresie określenia zestawu reguł asocjacyjnych będzie ustalenie optymalnych i uzasadnionych wartości wsparcia oraz zaufania. Należy pamiętać, że ustalenie zbyt niskich wartości może wydłużać czas wykonania algorytmu oraz spowodować otrzymanie zbyt wielu reguł, z których większość z nich nie będzie przydatna. W tym celu przeprowadzę eksperyment dla różnych kombinacji ww. wartości parametrów i sprawdzę, ile zostanie utworzonych reguł w ramach algorytmu Apriori.
+
+1. Eksperyment - testowanie poszczególnych wartości support oraz confidence, a liczba otrzymanych reguł algorytmu Apriori:
+```{r echo = T, results = 'hide'}
+
+# Zaproponowane wartości support i confidence do przetestowania:
+supportLvl <- c(0.1, 0.05, 0.01, 0.005, 0.003)
+confidenceLvl <- c(0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1)
+confVectLen <- length(confidenceLvl)
+
+# Zmienne do wyliczenia liczności reguł dla poszczególnych parametrów support oraz confidence:
+rules_sup10 <- integer(length = confVectLen)
+rules_sup5 <- integer(length = confVectLen)
+rules_sup1 <- integer(length = confVectLen)
+rules_sup0.5 <- integer(length = confVectLen)
+rules_sup0.3 <- integer(length = confVectLen)
+
+# Wyliczenia
+for (i in 1:length(confidenceLvl)) {
+  
+  #poziom wsparcia na poziomie 0.1
+  rules_sup10[i] <- length(apriori(Groceries, parameter=list(sup=supportLvl[1], 
+                                   conf=confidenceLvl[i], target="rules", minlen =2)))
+  #poziom wsparcia na poziomie 0.05
+  rules_sup5[i] <- length(apriori(Groceries, parameter=list(sup=supportLvl[2], 
+                                  conf=confidenceLvl[i], target="rules", minlen =2)))
+  #poziom wsparcia na poziomie 0.01
+  rules_sup1[i] <- length(apriori(Groceries, parameter=list(sup=supportLvl[3], 
+                                  conf=confidenceLvl[i], target="rules", minlen =2)))
+  #poziom wsparcia na poziomie 0.005
+  rules_sup0.5[i] <- length(apriori(Groceries, parameter=list(sup=supportLvl[4], 
+                                    conf=confidenceLvl[i], target="rules", minlen =2)))
+  #poziom wsparcia na poziomie 0.003
+  rules_sup0.3[i] <- length(apriori(Groceries, parameter=list(sup=supportLvl[5], 
+                                    conf=confidenceLvl[i], target="rules", minlen =2)))
+}
+```
+
+2. Tabelaryczna prezentacja wyników eksperymentu z dobieraniem poszczególnych wartości support oraz confidence, a ilość otrzymanych reguł w ramach algorytmu Apriori:
+```{r}
+# Ramka/macierz - ilość reguł uzależniona od wartości support oraz confidence:
+num_rules_matrix <- data.frame(confidenceLvl, rules_sup10, rules_sup5, rules_sup1, rules_sup0.5,rules_sup0.3)
+
+num_rules_matrix
+```
+
+Wnioski:
+
+Zgodnie z przypuszczeniami dla wyższych poziomów wsparcia oraz zaufania mamy niewielką liczbę reguł lub ich brak. Można zauważyć, że dla wsparcia na poziomie 0.1 nie znaleziono żadnych reguł, niestety przy poziomie wsparcia wynoszącym 0.05 wyniki nadal nie są satysfakcjonujące, ponieważ reguły charakteryzują się niską wartością zaufania poniżej wartości 0.5. 
+
+W konsekwencji rozsądnym wyborem wydaje się ustalenie minimalnego poziomu wsparcia uzależnionego od min. satysfakcjonującego nas poziomu zaufania (> 0.5 bliżej wartości 0.8) lub liczby koszyków, dla których istnieją reguły. Generalnie pożądaną sytuacją byłoby wygenerowanie reguł o możliwie jak najwyższym poziomie zaufania przy relatywnie wysokim poziomie wsparcia i występowaniu zależności pozytywnej między poprzednikiem a następnikiem reguły.
+
+Mając na uwadze powyższe, zdecydowałem się analizować dalej reguły o min. wsparciu 0.003, oraz poziomie zaufania min. 0.7. 
+
+3. Wybrane parametry algorytmy Apriori, poniżej:
+```{r}
+#Wybrane wartości wsparcia oraz zaufania:
+supportToUse = 0.003
+confidenceToUse = 0.7
+minlen = 2
+#maxlen = 4
+```
+
+III. Algorytm Apriori - odkrywanie reguł
+
+1. Wygenerowanie reguł przy pomocy algorytmu apriori:
+```{r}
+rulesApriori <-apriori(Groceries, 
+                       parameter = 
+                         list(sup=supportToUse, 
+                              conf=confidenceToUse, 
+                              target="rules", 
+                              minlen =2))
+
+options(digits = 5)
+inspect(rulesApriori)
+```
+Zgodnie z wcześniejszymi wyliczeniami w sekcji III.2 otrzymałem w ramach zadanych parametrów support 0.003 oraz confidence 0.7 - 19 reguł.
+
+
+2. Sprawdzenie czy mamy reugły nadmiarowe (redundantne) i w przypadku ich wystpowania usunięcie ich.
+```{r}
+inspect(rulesApriori[is.redundant(rulesApriori)])
+```
+Brak reguł nadmiarowych.
+
+```{r}
+#usunięcie niepotrzebnych reguł o ile występują
+rulesApriori <- rulesApriori[is.redundant(rulesApriori) == FALSE]
+```
+
+
+3. Sprawdzenie czy poprzednik z następnikiem są zależne pozytywnie przy pomocy wskaźnika certainty factor:
+```{r}
+itemsNo <- length(rulesApriori)
+
+addMeasureApriori <- interestMeasure(rulesApriori,"certainty")
+intres <- which(sapply(addMeasureApriori, function(x) {x > 0  && x <= 1})==TRUE)
+
+intersRule <- length(rulesApriori[intres])
+ans <- (intersRule == itemsNo)
+cat("Czy wszystkie reguły mają współcynnik pewności powyżej 0, a poprzednik z następnikiem są zależne pozytywnie? Odpowiedz:", ans)
+```
+Dla wszystkich analizowanych reguł certainty factor jest większy od zera.
+
+
+4. Zapisanie otrzymanych reguł w ramce danych i wyszukiwanie interesujących nas reguł i ich selekcja:
+```{r}
+options(digits = 5)
+
+rulesAprioriDf <- DATAFRAME(rulesApriori,separate = TRUE, 
+                       setStart = '', 
+                       itemSep = ',', 
+                       setEnd = '')
+
+rulesAprioriDf["certainty"] <- addMeasureApriori # dopisanie do ramki wskaźnika certainty factor.
+
+rulesAprioriDf[order(-rulesAprioriDf["confidence"]),] #filtrowanie ramki danych po wybranym parametrze
+```
+
+Wizualizacja otrzymanych reguł w celu selekcji najlepszych i najbardziej interesujących reguł:
+```{r}
+
+plot(rulesApriori, measure = c("support", "lift"), shading = "confidence") 
+plot(rulesApriori, method="graph", shading="support")
+plot(rulesApriori, method = "graph", engine = "htmlwidget", shading = "confidence")
+```
+
+**OGÓLNE WNIOSKI:**
+
+Wśród analizowanych reguł, poniższa reguła jest pod względem otrzymanych miar oceny reguł najlepsza:<br/>
+
+ 15 >> LHS (citrus fruit,tropical fruit,root vegetables) =>	RHS (other vegetables)	support 0.0044738	 confidence 0.78571	lift	4.0607	 count("koszyki") 44	certainty 0.73430<br/>
+
+Wyboru dokonałem, ze względu na najlepszą kombinację parametrów tj. wysoki poziom wsparcia i współczynnika podniesienia przy wysokich wartościach zarówno zaufania jak również współczynnika pewności.  Reguła ta nie jest najbardziej interesująca, jednak jest na pewno prawdziwa i sprawdzona. Nie bez powodu produkty te znajdują się przeważnie w bliskim położeniu względem siebie. Jeżeli, w przypadku tego sklepu tak nie było to ułożone ich w bliskim otoczeniu może pozytywnie wpłynąć na zakupy tych towarów przez kupujących. Z drugiej strony ta reguła może by samospełniającą się przepowiednią, czyli reguła, która wynika z tego, że produkty te leżą blisko siebie. W takiej sytuacji reguła ta jedynie potwierdza, że położenie to jest właściwe, ale nie wnosi nic nowego. 
+
+Reguły, które zakwalifikowałem jako ciekawe, to:\
+ - LHS(onions,butter) ->	RHS(whole milk)	support: 0.0030503	confidence: 0.75000	lift: 2.9352 certainty: 0.66420\
+ - LHS(tropical fruit,root vegetables,whipped/sour cream) -> RHS(other vegetables)	support: 0.0034	confidence: 0.73333 lift 3.7900	count("koszyki") 33	certainty: 0.66936\
+ - LHS(citrus fruit,tropical fruit,root vegetables,whole milk) ->	RHS(other vegetables)	support: 0.0032	confidence: 0.88571	lift: 4.5775, count("koszyki"): 31 certainty: 0.8583<br/>
+
+Każda z tych reguł jest specyficzna na swój sposób. Pierwsza, reguła dotyczy produktów, które prawdopodobnie są w różnych sekcjach sklepu tj. masło i cebula vs pełne mleko, niemniej jednak należy pamiętać, że nie tylko samo położenie produktów wpływa na preferencje zakupowe konsumentów. To dosyć ciekawe połączenie produktów, które w ramach wykrytej reguły posiadało wysoki poziom zaufania (0.75), lift (3.79) oraz certainty factor (0.66). Dwie kolejne reguły, na pierwszym wykresie - punktowym, wyglądają jak outliery. Pierwsza reguła jest zaskakującym połączeniem warzyw, owoców z bitą/kwaśną śmietaną, która zwiększa prawdopodobieństwo zakupu innych warzyw (być może: bakłażana, dyni, których nie kupuje się codziennie??). Warto by było zapoznać się z kategorią "other vegetables" i zapoznać się z jej specyfiką, ponieważ występuje w dużej liczbie transakcji. Dokładniejsze poznanie tych produktów może prowadzić do stworzenia ciekawej kampanii promującej te produkty wspólnie. Ostatnia reguła charakteryzuje się najwyższym poziomem lift wśród analizowanych reguł, przy wskaźniku certainty factor bliski 1 co sugeruje na bardzo mocną zależność pozytywną. Kombinacja produktów po stronie LHS jest dość ciekawa; nabiałowo - warzywna.
+
+Konkludując:<br/>
+Wśród wyselekcjonowanych reguł w ramach algorytmu Apriori o min. zaufaniu 0.7 i stosunkowo niewielkim wsparciu 0.003, otrzymaliśmy wiele połączeń produktów nabiałowych z produktami takimi jak warzywa i owoce, co sugeruje, że kategorie te powinny w ramach powierzchni sklepowej współsąsiadować w niedalekiej odległości, gazetki sklepowe mogą również być wykorzystane w ramach wzmocnienia sprzedaży tych produktów poprzez odpowiednie strategie sprzedażowe (rabaty, zestawy, promocje itd.).
+
+
+**IV. WERYFIKACJA OTRZYMANYCH REGUŁ ALGORYTMEM ECLAT:**
+```{r}
+ecParam  = new("ECparameter", "confidence" = confidenceToUse, "support" = supportToUse, "minlen" = 2) 
+itemsets <- eclat(Groceries, ecParam)
+
+rulesEclat <- ruleInduction(itemsets, Groceries, confidence=confidenceToUse)
+inspect(rulesEclat)
+```
+
+```{r}
+#seleckcja zbiorów wykrytych przy użyciu funkcji eclat, a nie wykrytych przy użyciu funkcji apriori
+inspect(rulesEclat[which(!(rulesEclat %in% rulesApriori))])
+print(rulesEclat[which(!(rulesEclat %in% rulesApriori))])
+```
+
+#########################################KONIEC SKRYPTU#########################################
