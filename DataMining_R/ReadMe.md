@@ -1,4 +1,4 @@
-# DataManing tasks -> Market basket analysis - Associacion Rules + Clustering 
+# Data Maning Projects -> Market basket analysis - Associacion Rules and Clustering.
 
 I would like to present my final projects on Data Mining labs. 
 
