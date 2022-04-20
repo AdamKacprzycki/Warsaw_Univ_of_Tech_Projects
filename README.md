@@ -1,1 +1,1 @@
-# Warsaw_Univ_of_Tech_Projects
+# Warsaw University of Technology - Projects
