@@ -1,0 +1,397 @@
+---
+title: "Grupowanie Kmeans & DBSCAN - zadanie zaliczeniowe"
+author: Adam Kacprzycki - studia podyplomowe DS - PW Data mining - ed.11 (21L)- grupa
+  I
+output:
+  html_document:
+    df_print: paged
+  html_notebook: default
+  pdf_document: default
+---
+
+Intro-step: Import wykorzystywanych bibliotek:
+```{r}
+library(tidyverse)
+library(dbscan)
+library(fpc)
+library(cluster)
+library(factoextra)
+library(gridExtra)
+```
+
+Wczytanie danych:
+```{r}
+#download.file('http://staff.ii.pw.edu.pl/~rbembeni/dane/Pokemon.csv','Pokemon.csv')
+pokemon <- read.csv("Pokemon.csv")
+```
+
+ **1. Sprawdzenie, jakiego typu są atrybuty, czy są wartości brakujące**
+
+a) Przegląd atrybutów i ich typów danych:
+```{r}
+str(pokemon)
+```
+
+b) Weryfikacja nie uzupełnionych komórek tj. NA oraz uzupełnionych pustych komórek "":
+
+-funkcja summary - przegląd podstawowych statystyk oraz sprawdzenie wartości brakujących:
+```{r}
+summary(pokemon)
+```
+- dodatkowa weryfikacja wartości NA:
+```{r}
+colSums(is.na(pokemon))
+```
+- weryfikacja "pustych" komórek:
+```{r}
+colSums(pokemon == "")
+```
+
+Wnioski:
+Dane dot. pokemon posiadają 13 kolumn (atrybutów) i 800 wierszy. W danych nie mamy pól nieuzupełnionych tj. NA, niemniej jednak w danych zidentyfikowałem pola "". Teoretycznie puste komórki zawierające "" powinny zostać zastąpione innymi wartościami lub usunięte ze zbioru, ale nie zostaną uzupełnione/usunięte ponieważ atrybut Type.2 zostanie finalnie usunięty z analizy (zmienne, które zostaną usunięte będą opisane w dalszej części).
+
+Wstępna analiza danych
+a) ilość rodzajów / typów pokemonów pierwszego rodzaju (głównego):
+```{r}
+cat("Ilość rodzajów / typów pokemonów:",length(levels(pokemon$Type.1)), "\n")
+levels(pokemon$Type.1)
+```
+
+b) ILość pokemonów poszczególnych rodzajów pierwszego rodzaju:
+```{r}
+ggplot(pokemon, aes(x=fct_infreq(Type.1))) + 
+  geom_bar(fill="#96D47A", colour="white") +
+  labs(x="Type 1", y="Freq",
+       title="Ilość pokemonów w ramach głównego rodzaju/typu") +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+- zestawienie tabelaryczne ilości oraz częstości występowania głównego rodzaju pokemonów:
+```{r}
+pokemon %>%
+  group_by(Type.1) %>%
+  summarise(ilosc = n()) %>%
+  mutate(freq = round(ilosc/ sum(ilosc), 3)) %>% 
+  arrange(desc(freq))
+```
+
+- zestawienie tabelaryczne ilości oraz częstości występowania dodatkowego rodzaju/typu pokemonów.
+```{r}
+pokemon %>%
+  group_by(Type.2) %>%
+  summarise(ilosc = n()) %>%
+  mutate(freq = round(ilosc/ sum(ilosc), 3)) %>% 
+  arrange(desc(freq))
+```
+
+- kombinacje dwóch rodzajów typów pokemonów:
+```{r}
+typy <- pokemon %>%
+  group_by(Type.1, Type.2) %>%
+  summarise(count=n()) 
+
+ggplot(typy, aes(x=Type.1,y=Type.2)) +
+  geom_tile(aes(fill=count), show.legend=FALSE) +
+  geom_text(aes(label=count)) +
+  theme_bw() +
+  theme(axis.text.x=element_text(angle=45, hjust=1)) +
+  labs(x="Type 1", y="Type 2",
+       title="Liczba kombinacji Pokémon dla każdego rodzaju/typu") + 
+       theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_gradient(low="white", high="#52803D") 
+```
+
+-zestawienie liczbowe kombinacji rodzajów/typów pokemonów
+```{r}
+# Counts of each type combination
+pokemon %>%
+  group_by(Type.1, Type.2) %>%
+  summarise(ilosc=n()) %>%
+  mutate(freq = round(ilosc/ nrow(pokemon), 3)) %>% 
+  arrange(desc(ilosc))
+
+```
+
+Wnioski: 
+Opisywany zbiór danych pokemon posiada dwa główne rodzaje (Type.1), które występowały najczęściej tj. Water oraz Normal. Ponadto, występują liczne różne kombinacje rodzaju głównego (Type.1) z rodzajem dodatkowym (Type.2). Wstępnie zakładam, że taka różnorodność połączeń rodzaju głównego z dodatkowymi, może utrudnić grupowanie tych danych. 
+
+
+**2. Grupowanie algorytmem partycjonującym**
+
+Selekcja zmiennych:
+
+Wydaje się, że uzasadnione jest usunięcie następujących atrybutów z danej analizy:
+- X. - stanowiącej indeks - brak dodatkowej wiedzy płynącej z tej zmiennej,
+- Type.1 - cel zadania - teoretycznie wartość docelowa,
+- Type.2 - jw.,
+- Total - podsumowanie poszczególnych statystyk - informacje te zawierają inne zmienne (suma ich wartości),
+- Generation -  generacja serii TV Pokemon (czyt. jako sezony Pokemon) - zmienna nieistotna z punktu widzenia grupowania pokemonów w klastry według rodzaju,
+- Legendary - zmienna binarna - zostanie usunięta ponieważ to czy Pokemon jest legendarny czy też nie nie wpływa na jego rodzaj główny; pokemon legendary może być takiego samego typu jak inne pokemony np. Grass, Fire itd.
+
+
+```{r}
+pokeData <- pokemon %>% 
+              select(-c(X., Name, Type.1, Type.2, Total, Generation, Legendary))
+
+head(pokeData)
+```
+
+- Skalowanie danych:
+```{r}
+dataPokScale <- scale(pokeData, center = FALSE)
+dataPokScale <- as.data.frame(dataPokScale)
+
+#head(dataPokScale)
+```
+
+- Losowo wybrane 25% danych do ustalenia ilości grup - x próbek:
+```{r}
+set.seed(15151)
+
+#?sample_frac()
+sampleData <- list()
+noSample <- 6
+
+for(i in 1:noSample)
+  {
+   sampleData[[i]] <- sample_frac(dataPokScale, 0.25) 
+ }
+```
+
+**2a) Wyznaczenie liczby grup dla algorytmu k-środków metodą „łokcia” przy wykorzystaniu 25% losowo wybranych danych – sprawdzenie dla kilku przykładów:**
+```{r}
+cElbow <- list()
+cASill <- list()
+
+for(i in 1:length(sampleData))
+  {
+   cElbow[[i]] <- fviz_nbclust(sampleData[[i]],FUNcluster=kmeans,method = "wss",linecolor = "#46A11C") + ggtitle(paste("WSS, sample no:",i))
+   cASill[[i]] <- fviz_nbclust(sampleData[[i]],FUNcluster=kmeans,method = "s",linecolor = "#46A11C") + ggtitle(paste("Avg Sil Width, \nsample no:",i))
+   }
+
+#z dokumentacji: https://www.datanovia.com/en/lessons/determining-the-optimal-number-of-clusters-3-must-know-methods/
+```
+
+- wyświetlenie wyników doboru ilości grup metodą łokcia: 
+```{r}
+do.call('grid.arrange',c(cElbow, ncol = 3))
+```
+- wyświetlenie wyników doboru liczby grup dla metody Average Silhouette Width: 
+```{r}
+do.call('grid.arrange',c(cASill, ncol = 3))
+```
+
+- wyniki dla całej populacji:
+```{r}
+elbowAll <- fviz_nbclust(dataPokScale,FUNcluster=kmeans,method = "wss",linecolor = "#46A11C") + ggtitle(paste("Metoda WSS"))
+asvAll <- fviz_nbclust(dataPokScale,FUNcluster=kmeans,method = "s",linecolor = "#46A11C") + ggtitle(paste("Metoda Avg Sil Width"))
+
+grid.arrange(elbowAll,asvAll,heights=unit(0.8, "npc") , top = "Optymalna liczba klastów cała populacja")
+```
+
+
+Wnioski:
+Mając na uwadze powyżej otrzymane wykresy dot. metody łokcia oraz avarage sillhouette width, można zidentyfikować punkt "przegięcia" dla wartości 2. W konsekwencji ustalam liczbę grup równą 2.
+
+**2b) Wykonanie grupowania z różnymi wartościami parametrów (np. zastosowanej miary odległości w algorytmie k-środków):**
+
+- różne implementacje algorytmu k-means:
+```{r}
+algs = c("Hartigan-Wong", "Lloyd", "Forgy","MacQueen")
+
+par(mfrow = c(2, 2))
+set.seed(1)
+
+for(i in 1:4)
+  {
+    poke.kmeansS = kmeans(dataPokScale,2,nstart = 1, iter.max = 40, algorithm = algs[i] ) 
+    #drukuj wykres
+    plot(dataPokScale[1:2], col = poke.kmeansS$cluster, 
+         main = paste("Tot.with:", round(poke.kmeansS$tot.withinss,7), "\nAlg.Type:", algs[i]), 
+         xlab = "", ylab = "")
+    points(poke.kmeansS$centers[,1:2], col = 3:4, pch = 8, cex=2)
+  }
+```
+
+Wnioski:
+Otrzymane wyniki w zakresie różnych implementacji algorytmu kmeans są właściwie identyczne dla k = 2.
+
+-Zapisanie wyników dot. ilości grup i utworzonego grupowania:
+```{r}
+#ilość grup
+g <- 2
+
+#informacje dot. grupowania (kmeans)
+poke.kmeansS = kmeans(dataPokScale,g,nstart = 1, iter.max = 40) 
+poke.kmeansS  
+```
+
+**2c) Ocena jakości grupowa przy użyciu indeksu Silhouette.**
+```{r}
+km_alt<-eclust(dataPokScale, "kmeans", k = g, graph=T)
+fviz_silhouette(km_alt, palette="jco")
+
+#lub
+
+#?fviz_silhouette
+#PokKmeanSsil <- silhouette(poke.kmeansS$cluster, dist(dataPokScale))
+#fviz_silhouette(PokKmeanSsil)
+```
+
+-sprawdzam, dla których obserwacji index Silhouette przyjmuje wartności niższe od zera:
+```{r}
+# Silhouette width of observation
+km.res <- eclust(dataPokScale, "kmeans", k = g, nstart = 25, graph = FALSE)
+
+# Silhouette width of observation
+sil <- km.res$silinfo$widths[, 1:3]
+
+# Objects with negative silhouette
+neg_sil_index <- which(sil[, 'sil_width'] < 0)
+negativeSil <- sil[neg_sil_index, , drop = FALSE]
+head(negativeSil)
+
+#nrow(negativeSil)/nrow(dataPokScale) #ile procent obserwacji dla których index Sil jest mniejszy od zera
+
+#z dokumentacji: https://www.datanovia.com/en/lessons/cluster-validation-statistics-must-know-methods/
+```
+
+Wnioski:
+Otrzymane rezultaty w przypadku pierwszego klastra nie są zadawalające, część obserwacji (ok. 6%) została zle przydzielona do danej grupy (index Silhouette przyjął wartości mniejsze od zera). Lepiej prezentuje się drugi klaster dla którego ww. indeks przyjmuje wartości dodatnie co oznacza dobre przydzielenie danej obserwacji do klastra.
+
+**2d) Przypisanie poszczególnych rekordów do grup:**
+```{r}
+pokemon$Groupe <- poke.kmeansS$cluster
+
+head(pokemon)
+```
+
+- wyświetlenie rezultatów kmeans clustering:
+```{r}
+#?fviz_cluster
+fviz_cluster(poke.kmeansS, dataPokScale, main = "Utworzone klastry", ellipse.type = "norm")
+```
+
+**2e) Znalezienie charakterystycznych elementów grup**
+
+- zweryfikowanie liczności poszczególnych grup:
+```{r}
+poke.kmeansS$size
+```
+Obie grupy mają zbliżone wielkości.
+
+- analiza centrów poszczególnych atrybutów grup (dla wartości znormalizowanych):
+```{r}
+#?kmeans
+poke.kmeansS$centers
+```
+
+Otrzymane grupy bradzo różnią się między sobą. Z jednej strony mam do czyniania z klasterm 1, którego centra klastrów dla wszystkich atrybutów przyjmują wysokie wartości. Odwrotną sytuację mamy w przypadku klastra 2 (mniej więcej o połowę mniejsze wartości). Klaster 1 można określić grupą pokemonów "Silnych" o wysokich parametrach opisuących (siły, szybkości, życia itd) oraz klaster 2 pokemonów "Zwykłych" bądź słabych. 
+
+Otrzymane wyniki wydają się dość przewidywalne, a szersza znajomość tematu świata pokemon może przynieść odpowiedzi dlaczego mamy do czynienia z taką sytuacją i dlaczego w ramach budowy klastrów otrzymaliśmy dwa klastry. Jest to związane min. z ewolucją pokemonów tj. mam doczynienia z tym samym osobnikiem o takim samym rodzaju główny (Type.1) i dodatkowym (Type.2) ale na różnym poziomie rozwoju (stąd wyższe parametry opisujące).
+
+**3. Grupowanie algorytmem DBSCAN**
+
+**3a) Wyznaczenie parametru eps dla algorytmu DBSCAN metodą szukania punktu przegięcie z wykorzystaniem 25% losowo wybranych danych – sprawdzenie dla kilku wartości K**
+
+```{r}
+set.seed(15151)
+PokeSilSample <- sample_frac(dataPokScale, 0.25)
+
+dbSCAN <- list()
+
+minPtsTest <- seq(2, 14, by = 1)
+
+for(i in 1:length(minPtsTest)) 
+  {
+    dbSCAN[[i]] <- kNNdistplot(PokeSilSample, k = i)
+    }
+```
+
+Wnioski:
+Analizując powyżej otrzymane wykresy, można zauważyć, że dla zadanych k z przedziału <1,14> punkt przełamania krzywej znajduje się dla wartości od 0.5 do 0.75. W dalszej części analizy zostaną zweryfikowane poszczególne kombinacje tych parametrów i otrzymane rezultaty (ilości klastrów).
+
+**3b) Wykonanie grupowania dla kilku zestawów wartości parametrów.**
+
+```{r}
+#?dbscan
+epsTest <-seq(0.5, 0.75, by = 0.05)
+minPtsTest <- seq(2,length(epsTest)*2,2)
+
+for(i in 1:length(minPtsTest)) {                                             
+ 
+  for(j in 1:length(minPtsTest)) {                                           
+   print(paste("epsTest = ",epsTest[i]," >>>>>>  minPtsTest = ",minPtsTest[j]))  
+   print(summary(silhouette(dbscan::dbscan(dataPokScale, eps = epsTest[i], minPts = minPtsTest[j])$cluster, dist(dataPokScale))))
+   print("----------------------------------------------")
+  }
+}
+```
+
+Wnioski:
+Zgodnie z oczekiwaniami otrzymaliśmy przy mniejszych wartościach minPts więcej utworzonych klastrów i na odwrót. Najlepiej oceniona konfiguracja eps oraz minPts parametrami Silhouette to eps = 0.75 oraz minPts =4. Niemniej jednak w ramach tego grupowania otrzymaliśmy jedną grupę (defakto brak grupowania) i bardzo niską ilośc punktów szumowych. Można by było próbować szukać kombinacji parametrów algorytmu DBSCAN, dla których otrzymamy większą liczbę klastrów przy wartościch indeksu Sillhouette > 0. Niemniej jednak, nawet jeżeli występują takie kombinacje to są one na tle całej populacji małoliczne - parę obiektów. 
+
+Wybranie finalnych wartości eps oraz minPts oraz utworzenie klastrów w ramach algorytmu DBSCAN:
+```{r}
+epsFinal <- 0.75
+minPtsFinal <- 4 
+
+dbscan.out <-  dbscan::dbscan(dataPokScale, eps = epsFinal, minPts = minPtsFinal)
+```
+
+
+**3c) Ocena jakości grupowa przy użyciu indeksu Silhouette.**
+```{r}
+#?silhouette
+sil.dbscan <- silhouette(dbscan.out$cluster, dist(dataPokScale))
+summary(sil.dbscan)
+#PokKmeanSsil <- silhouette(poke.kmeansS$cluster, dist(dataPokScale))
+```
+
+- graficzna prezentacja wyników w ramach oceny grupowania wartościami indeksu Silhouette.
+```{r}
+fviz_silhouette(sil.dbscan)
+```
+Wnioski:
+Otrzymaliśmy małą liczbę punktów szumu oraz jeden klaster. Dla całego klastra 1 indeks Silhouette przyjmuje wartości większe od 1, oznacza to dobre dopasowanie obserwacji do klastra. Niemniej jednak otrzymaliśmy jedną grupę co nie jest satysfakcjonującym wynikiem.
+
+-prezentacja graficzna dokonanego grupowania danych pokemon algorytmem DBSCAN.
+```{r}
+#?fviz_cluster
+fviz_cluster(dbscan.out, dataPokScale, main = "Utworzone klastry", ellipse.type = "norm")
+```
+
+**3d). Przypisanie poszczególnych rekordów do grup**
+```{r}
+dataPokScaleDB <- dataPokScale
+dataPokScaleDB$Groupe <- dbscan.out$cluster
+
+head(dataPokScaleDB)
+```
+
+**3e) Znalezienie charakterystycznych elementów grup**
+
+- klaster 1
+```{r}
+summary(dataPokScaleDB %>% filter(Groupe == 1))
+```
+Cieżko zidentyfikować cechy szczególne grupy,w przypadku otrzymania w ramach grupowania tylko jednego klastra.
+
+- punkty szumu
+```{r}
+summary(dataPokScaleDB %>% filter(Groupe == 0))
+```
+Zgodnie z oczekiwaniami wartości punktów szumu, różnią się od tych zgrupowanych w ramach klastra 1. Patrząc na wartości średnie można zauważyć,że są punkty szumu, które mają większe wartości atrybutu HP, Defence oraz Spec.Defence.
+
+**4. Porównanie wyników uzyskanych dwoma metodami grupowania.**
+
+W ramach przeprowadzonych eksperymentów otrzymaliśmy różne wyniki w ramach poszczególnych algorytmów grupowania. Zdecydowanie bardziej obiecujące wyniki otrzymaliśmy w ramach grupowania danych algorytmem kmeans dla których otrzymaliśmy lepsze i sensowniejsze wyniki. Algorytm kmeans podzielił nam zbiór na dwa klastry dla których wartości indeksu Silhouette były większe od zera, a wartości mniejszych od zera było ok. 6%. 
+
+Nie zadowolające były wyniki otrzymane w ramach algorytmu DBSCAN dla którego otrzymaliśmy tylko jedną grupę, co w konsekwencji sprowadziło się do braku grupowania. Mimo doboru odpowiednich parametrów eps oraz minPts (i ich kombinacji), nie otrzymano grup dla których liczność byłaby większa niż 5 obserwacji (przy 800 obiektach).
+
+W związku z powyższym, należałoby zastanowić się czy analizowane dane nie należałoby zmodyfikować i przeanalizować ponownie. Przykładowo możnaby było rozdzielić pokemony pierwszego stadium rozwoju i analizować je oddzielnie (w ten sposób defakto unika się duplikatów i pokemonów o wyższych statystykach). Ponadto, na wyniki klasyfikacji może negatywnie wpływać również fakt, że występują różne kombinacje atrybutu(Type.1) oraz atrybutu (Type.2) jest ich około 400. 
+
+
+
