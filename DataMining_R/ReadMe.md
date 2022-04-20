@@ -1,19 +1,19 @@
-# Data Maning Projects -> Market basket analysis - Associacion Rules and Clustering.
+# Data Mining Projects -> Market basket analysis - Associacion Rules and Clustering.
 
-1. Market basket analysis - Assocication rules - I answer the question : Which products should be situated close to each other (on the retail space) and thus how to increase sale of it?
+1. Market basket analysis - Assocication rules - I answer the question : Which products should be situated close to each other (on the retail space) and thus how to increase sales?
 
-2. Clustering Project - I answer th question: Is it possible to grouped pokemon by types (water, fire ect.) based only on basic stats (HP, Sepc. Attack ect)?
+2. Clustering Project - I answer the question: Is it possible to group pokemon by types (water, fire ect.) based only on basic stats (HP, Spec. Attack ect.)?
 
-Enjoy discovering my project! I hope you find it usefull and interesting :) 
+Enjoy discovering my project! I hope you will find it usefull and interesting :) 
 
-*translate scripts to ENG soon
+*translating scripts to ENG soon
 
 
 ## Market basket analysis - Associacion Rules 
 
 **IDE** <- RStudio <3
 
-**data** <- build in data set: groceries
+**data** <- built on data set: groceries
 
 **used algorithms:**
 
