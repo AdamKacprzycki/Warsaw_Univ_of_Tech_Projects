@@ -2,5 +2,4 @@
 
 IDE <- RStudio <3
 
-used libaries <- dplyr \n
-                 tidyverse
+used libaries <- dplyr  tidyverse
