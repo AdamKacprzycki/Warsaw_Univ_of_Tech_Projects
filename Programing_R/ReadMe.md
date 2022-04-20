@@ -2,5 +2,5 @@
 
 IDE <- RStudio <3
 
-used libaries <- dplyr /n
+used libaries <- dplyr \n
                  tidyverse
