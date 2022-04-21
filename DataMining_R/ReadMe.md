@@ -8,7 +8,7 @@ Don't hesitate to download the html file to view projects in a more comfortable 
 
 Enjoy discovering my project! I hope you will find it usefull and interesting :) 
 
-*translating scripts to ENG soon
+*ENG comments in notebook soon
 
 
 ## Market basket analysis - Associacion Rules 
