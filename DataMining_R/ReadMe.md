@@ -4,6 +4,8 @@
 
 2. Clustering Project - I answer the question: Is it possible to group pokemon by types (water, fire ect.) based only on basic stats (HP, Spec. Attack ect.)?
 
+Don't hesitate to download the html file to view projects in a more comfortable way.
+
 Enjoy discovering my project! I hope you will find it usefull and interesting :) 
 
 *translating scripts to ENG soon
